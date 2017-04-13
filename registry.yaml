@@ -1,0 +1,107 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: kube-registry-pvc
+  namespace: kube-system
+  labels:
+    kubernetes.io/cluster-service: "true"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  selector:
+    matchLabels:
+      app: kubernetes-registry
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: kube-registry-v0
+  namespace: kube-system
+  labels:
+    k8s-app: kube-registry
+    version: v0
+    kubernetes.io/cluster-service: "true"
+spec:
+  # replicas: 1
+  # selector:
+  #   k8s-app: kube-registry
+  #   version: v0
+  template:
+    metadata:
+      labels:
+        k8s-app: kube-registry
+        registry: entry-point
+        version: v0
+        kubernetes.io/cluster-service: "true"
+    spec:
+      containers:
+      - name: registry
+        image: registry:2
+        resources:
+          limits:
+            cpu: 100m
+            memory: 100Mi
+        env:
+        - name: REGISTRY_HTTP_ADDR
+          value: :5000
+        - name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY
+          value: /var/lib/registry
+        volumeMounts:
+        - name: image-store
+          mountPath: /var/lib/registry
+        ports:
+        - containerPort: 5000
+          name: registry
+          protocol: TCP
+      volumes:
+      - name: image-store
+        persistentVolumeClaim:
+          claimName: kube-registry-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-registry
+  namespace: kube-system
+  labels:
+    k8s-app: kube-registry
+    kubernetes.io/cluster-service: "true"
+    kubernetes.io/name: "KubeRegistry"
+spec:
+  selector:
+    k8s-app: kube-registry
+    registry: entry-point
+  ports:
+  - name: registry
+    port: 5000
+    protocol: TCP
+---
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: kube-registry-proxy
+  namespace: kube-system
+  labels:
+    k8s-app: kube-registry
+    kubernetes.io/cluster-service: "true"
+    version: v0.4
+spec:
+  template:
+    metadata:
+      labels:
+        k8s-app: kube-registry
+        kubernetes.io/name: "kube-registry-proxy"
+        kubernetes.io/cluster-service: "true"
+        version: v0.4
+    spec:
+      hostNetwork: true
+      containers:
+      - name: kube-registry-proxy
+        image: meera/kube-registry-proxy:0.4
+        resources:
+          limits:
+            cpu: 100m
+            memory: 50Mi
